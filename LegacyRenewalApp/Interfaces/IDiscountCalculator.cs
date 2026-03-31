@@ -1,0 +1,14 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace LegacyRenewalApp.Interfaces
+{
+    public interface IDiscountCalculator
+    {
+        public decimal CalculateDiscount(Customer customer, SubscriptionPlan plan, decimal baseAmount, int seatCount);
+
+    }
+}
