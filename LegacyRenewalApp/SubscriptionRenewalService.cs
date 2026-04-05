@@ -12,23 +12,35 @@ namespace LegacyRenewalApp
         private readonly IRenewalServiceValidator _validator;
         private readonly IBillingGateway _billingGateway;
         private readonly IDiscountCalculator _discountCalculator;
+        private readonly INoteGenerator _noteGenerator;
+        private readonly IFeeCalculator _feeCalculator;
+        private readonly ITaxCalculator _taxCalculator;
         
         public SubscriptionRenewalService() : this(new CustomerRepository(), 
             new SubscriptionPlanRepository(), 
             new RenewalServiceValidator(),
             new BillingGatewayAdapter(),
-            new DiscountCalculator()) { }
+            new DiscountCalculator(),
+            new NoteGenerator(),
+            new FeeCalculator(),
+            new TaxCalculator()) { }
         public SubscriptionRenewalService(ICustomerRepository customerRepository, 
             ISubscriptionRepository subscriptionRepository,
             IRenewalServiceValidator validator,
             IBillingGateway billingGateway,
-            IDiscountCalculator discountCalculator)
+            IDiscountCalculator discountCalculator,
+            INoteGenerator noteGenerator,
+            IFeeCalculator feeCalculator,
+            ITaxCalculator taxCalculator)
         {
             _customerRepository = customerRepository;
             _subscriptionRepository = subscriptionRepository;
             _validator = validator;
             _billingGateway = billingGateway;
             _discountCalculator = discountCalculator;
+            _noteGenerator = noteGenerator;
+            _feeCalculator = feeCalculator;
+            _taxCalculator = taxCalculator;
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -54,90 +66,34 @@ namespace LegacyRenewalApp
             }
 
             decimal baseAmount = (plan.MonthlyPricePerSeat * seatCount * 12m) + plan.SetupFee;
-            decimal discountAmount = 0m;
-            string notes = string.Empty;
+            decimal discountAmount = _discountCalculator.CalculateDiscount(customer, plan, baseAmount, seatCount);
 
-
-
-            decimal subtotalAfterDiscount = _discountCalculator.CalculateDiscount(customer, plan, baseAmount, seatCount);
+            decimal subtotalAfterDiscount = baseAmount - discountAmount;
+            bool subtotalRoundedUp = false;
             if (subtotalAfterDiscount < 300m)
             {
                 subtotalAfterDiscount = 300m;
-                notes += "minimum discounted subtotal applied; ";
+                subtotalRoundedUp= true;
             }
 
-            decimal supportFee = 0m;
-            if (includePremiumSupport)
-            {
-                if (normalizedPlanCode == "START")
-                {
-                    supportFee = 250m;
-                }
-                else if (normalizedPlanCode == "PRO")
-                {
-                    supportFee = 400m;
-                }
-                else if (normalizedPlanCode == "ENTERPRISE")
-                {
-                    supportFee = 700m;
-                }
+            decimal supportFee = _feeCalculator.CalculateSupportFee(includePremiumSupport, normalizedPlanCode);
 
-                notes += "premium support included; ";
-            }
+            decimal paymentFee = _feeCalculator.CalculatePaymentFee(normalizedPaymentMethod, subtotalAfterDiscount, supportFee);
 
-            decimal paymentFee = 0m;
-            if (normalizedPaymentMethod == "CARD")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.02m;
-                notes += "card payment fee; ";
-            }
-            else if (normalizedPaymentMethod == "BANK_TRANSFER")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.01m;
-                notes += "bank transfer fee; ";
-            }
-            else if (normalizedPaymentMethod == "PAYPAL")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.035m;
-                notes += "paypal fee; ";
-            }
-            else if (normalizedPaymentMethod == "INVOICE")
-            {
-                paymentFee = 0m;
-                notes += "invoice payment; ";
-            }
-            else
-            {
-                throw new ArgumentException("Unsupported payment method");
-            }
-
-            decimal taxRate = 0.20m;
-            if (customer.Country == "Poland")
-            {
-                taxRate = 0.23m;
-            }
-            else if (customer.Country == "Germany")
-            {
-                taxRate = 0.19m;
-            }
-            else if (customer.Country == "Czech Republic")
-            {
-                taxRate = 0.21m;
-            }
-            else if (customer.Country == "Norway")
-            {
-                taxRate = 0.25m;
-            }
+            decimal taxRate = _taxCalculator.CalculateTaxRate(customer);
 
             decimal taxBase = subtotalAfterDiscount + supportFee + paymentFee;
             decimal taxAmount = taxBase * taxRate;
             decimal finalAmount = taxBase + taxAmount;
 
+            bool finalAmountRoundedUp = false;
             if (finalAmount < 500m)
             {
                 finalAmount = 500m;
-                notes += "minimum invoice amount applied; ";
+                finalAmountRoundedUp = true;
             }
+
+            string notes = _noteGenerator.generateNotes(customer, plan, seatCount, subtotalRoundedUp, finalAmountRoundedUp);
 
             var invoice = new RenewalInvoice
             {
