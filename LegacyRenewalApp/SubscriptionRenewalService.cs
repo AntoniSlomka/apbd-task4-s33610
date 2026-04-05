@@ -16,6 +16,7 @@ namespace LegacyRenewalApp
         private readonly IFeeCalculator _feeCalculator;
         private readonly ITaxCalculator _taxCalculator;
         private readonly IInvoiceGenerator _invoiceGenerator;
+        private readonly IEmailGenerator _emailGenerator;
         
         public SubscriptionRenewalService() : this(new CustomerRepository(), 
             new SubscriptionPlanRepository(), 
@@ -25,7 +26,8 @@ namespace LegacyRenewalApp
             new NoteGenerator(),
             new FeeCalculator(),
             new TaxCalculator(),
-            new InvoiceGenerator()) { }
+            new InvoiceGenerator(),
+            new EmailGenerator()) { }
         public SubscriptionRenewalService(ICustomerRepository customerRepository, 
             ISubscriptionRepository subscriptionRepository,
             IRenewalServiceValidator validator,
@@ -34,7 +36,8 @@ namespace LegacyRenewalApp
             INoteGenerator noteGenerator,
             IFeeCalculator feeCalculator,
             ITaxCalculator taxCalculator,
-            IInvoiceGenerator invoiceGenerator)
+            IInvoiceGenerator invoiceGenerator,
+            IEmailGenerator emailGenerator)
         {
             _customerRepository = customerRepository;
             _subscriptionRepository = subscriptionRepository;
@@ -45,6 +48,7 @@ namespace LegacyRenewalApp
             _feeCalculator = feeCalculator;
             _taxCalculator = taxCalculator;
             _invoiceGenerator = invoiceGenerator;
+            _emailGenerator = emailGenerator;
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -106,11 +110,7 @@ namespace LegacyRenewalApp
 
             if (!string.IsNullOrWhiteSpace(customer.Email))
             {
-                string subject = "Subscription renewal invoice";
-                string body =
-                    $"Hello {customer.FullName}, your renewal for plan {normalizedPlanCode} " +
-                    $"has been prepared. Final amount: {invoice.FinalAmount:F2}.";
-
+                (String subject, String body) = _emailGenerator.generateEmail(customer, normalizedPlanCode, invoice);
                 _billingGateway.SendEmail(customer.Email, subject, body);
             }
 
