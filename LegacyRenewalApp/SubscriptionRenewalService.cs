@@ -15,6 +15,7 @@ namespace LegacyRenewalApp
         private readonly INoteGenerator _noteGenerator;
         private readonly IFeeCalculator _feeCalculator;
         private readonly ITaxCalculator _taxCalculator;
+        private readonly IInvoiceGenerator _invoiceGenerator;
         
         public SubscriptionRenewalService() : this(new CustomerRepository(), 
             new SubscriptionPlanRepository(), 
@@ -23,7 +24,8 @@ namespace LegacyRenewalApp
             new DiscountCalculator(),
             new NoteGenerator(),
             new FeeCalculator(),
-            new TaxCalculator()) { }
+            new TaxCalculator(),
+            new InvoiceGenerator()) { }
         public SubscriptionRenewalService(ICustomerRepository customerRepository, 
             ISubscriptionRepository subscriptionRepository,
             IRenewalServiceValidator validator,
@@ -31,7 +33,8 @@ namespace LegacyRenewalApp
             IDiscountCalculator discountCalculator,
             INoteGenerator noteGenerator,
             IFeeCalculator feeCalculator,
-            ITaxCalculator taxCalculator)
+            ITaxCalculator taxCalculator,
+            IInvoiceGenerator invoiceGenerator)
         {
             _customerRepository = customerRepository;
             _subscriptionRepository = subscriptionRepository;
@@ -41,6 +44,7 @@ namespace LegacyRenewalApp
             _noteGenerator = noteGenerator;
             _feeCalculator = feeCalculator;
             _taxCalculator = taxCalculator;
+            _invoiceGenerator = invoiceGenerator;
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -95,22 +99,8 @@ namespace LegacyRenewalApp
 
             string notes = _noteGenerator.generateNotes(customer, plan, seatCount, subtotalRoundedUp, finalAmountRoundedUp);
 
-            var invoice = new RenewalInvoice
-            {
-                InvoiceNumber = $"INV-{DateTime.UtcNow:yyyyMMdd}-{customerId}-{normalizedPlanCode}",
-                CustomerName = customer.FullName,
-                PlanCode = normalizedPlanCode,
-                PaymentMethod = normalizedPaymentMethod,
-                SeatCount = seatCount,
-                BaseAmount = Math.Round(baseAmount, 2, MidpointRounding.AwayFromZero),
-                DiscountAmount = Math.Round(discountAmount, 2, MidpointRounding.AwayFromZero),
-                SupportFee = Math.Round(supportFee, 2, MidpointRounding.AwayFromZero),
-                PaymentFee = Math.Round(paymentFee, 2, MidpointRounding.AwayFromZero),
-                TaxAmount = Math.Round(taxAmount, 2, MidpointRounding.AwayFromZero),
-                FinalAmount = Math.Round(finalAmount, 2, MidpointRounding.AwayFromZero),
-                Notes = notes.Trim(),
-                GeneratedAt = DateTime.UtcNow
-            };
+            var invoice = _invoiceGenerator.generateInvoice(customerId, normalizedPlanCode, customer, normalizedPaymentMethod, seatCount,
+                baseAmount, discountAmount, supportFee, paymentFee, taxAmount, finalAmount, notes);
 
             _billingGateway.SaveInvoice(invoice);
 
